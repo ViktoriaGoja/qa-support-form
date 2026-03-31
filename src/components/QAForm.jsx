@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { loginRequest } from "../authConfig";
-import { submitQARecord } from "../sharepointService";
+import { submitQARecord, sendScoreEmail } from "../sharepointService";
 import { QA_QUESTIONS } from "../questions";
 
 const CATEGORIES = [...new Set(QA_QUESTIONS.map((q) => q.category))];
@@ -196,6 +196,7 @@ export default function QAForm() {
   const initialAnswers = Object.fromEntries(QA_QUESTIONS.map((q) => [q.field, null]));
   const [answers, setAnswers] = useState(initialAnswers);
   const [agentName, setAgentName] = useState("");
+  const [agentEmail, setAgentEmail] = useState("");
   const [evaluatorName, setEvaluatorName] = useState("");
   const [suggestions, setSuggestions] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -214,7 +215,7 @@ export default function QAForm() {
     };
   }, [answers]);
 
-  const allAnswered = answered === QA_QUESTIONS.length && agentName.trim() && evaluatorName.trim();
+  const allAnswered = answered === QA_QUESTIONS.length && agentName.trim() && agentEmail.trim() && evaluatorName.trim();
   const colors = scoreColor(scorePercent);
 
   async function handleSubmit(e) {
@@ -232,12 +233,27 @@ export default function QAForm() {
       await submitQARecord(tokenResponse.accessToken, {
         ...answers,
         AgentName: agentName.trim(),
+        AgentEmail: agentEmail.trim(),
         EvaluatorName: evaluatorName.trim(),
         SuggestionsForImprovement: suggestions.trim(),
         TotalScore: totalScore,
         ScorePercent: scorePercent,
         PassFail: passFail,
       });
+
+      // Send the agent an email with their score
+      try {
+        await sendScoreEmail(tokenResponse.accessToken, {
+          agentName: agentName.trim(),
+          agentEmail: agentEmail.trim(),
+          evaluatorName: evaluatorName.trim(),
+          scorePercent,
+          totalScore,
+          passFail,
+        });
+      } catch (emailErr) {
+        console.warn("Score email could not be sent:", emailErr.message);
+      }
 
       setSubmitted(true);
     } catch (err) {
@@ -248,12 +264,28 @@ export default function QAForm() {
           await submitQARecord(tokenResponse.accessToken, {
             ...answers,
             AgentName: agentName.trim(),
+            AgentEmail: agentEmail.trim(),
             EvaluatorName: evaluatorName.trim(),
             SuggestionsForImprovement: suggestions.trim(),
             TotalScore: totalScore,
             ScorePercent: scorePercent,
             PassFail: passFail,
           });
+
+          // Send the agent an email with their score
+          try {
+            await sendScoreEmail(tokenResponse.accessToken, {
+              agentName: agentName.trim(),
+              agentEmail: agentEmail.trim(),
+              evaluatorName: evaluatorName.trim(),
+              scorePercent,
+              totalScore,
+              passFail,
+            });
+          } catch (emailErr) {
+            console.warn("Score email could not be sent:", emailErr.message);
+          }
+
           setSubmitted(true);
         } catch (popupErr) {
           setError(popupErr.message);
@@ -269,6 +301,7 @@ export default function QAForm() {
   function resetForm() {
     setAnswers(initialAnswers);
     setAgentName("");
+    setAgentEmail("");
     setEvaluatorName("");
     setSuggestions("");
     setSubmitted(false);
@@ -283,10 +316,10 @@ export default function QAForm() {
             <h1 style={styles.headerTitle}>Support Quality Assurance</h1>
           </div>
           <div style={styles.successBox}>
-            <div style={styles.successCircle}>✅</div>
+            <div style={styles.successCircle}>â</div>
             <h2 style={{ margin: "0 0 8px", color: "#1F5C99" }}>Screening Submitted</h2>
             <p style={{ color: "#555", margin: "0 0 8px" }}>
-              <strong>{agentName}</strong> — evaluated by <strong>{evaluatorName}</strong>
+              <strong>{agentName}</strong> â evaluated by <strong>{evaluatorName}</strong>
             </p>
             <div
               style={{
@@ -342,7 +375,7 @@ export default function QAForm() {
         <div style={styles.header}>
           <h1 style={styles.headerTitle}>Support Quality Assurance</h1>
           <p style={styles.headerSub}>
-            20 criteria · 5 points each · 100 points max · Pass threshold: 80%
+            20 criteria Â· 5 points each Â· 100 points max Â· Pass threshold: 80%
           </p>
         </div>
 
@@ -356,6 +389,17 @@ export default function QAForm() {
                 value={agentName}
                 onChange={(e) => setAgentName(e.target.value)}
                 placeholder="Full name"
+                required
+              />
+            </div>
+            <div style={styles.col}>
+              <label style={styles.label}>Agent Email *</label>
+              <input
+                style={styles.input}
+                type="email"
+                value={agentEmail}
+                onChange={(e) => setAgentEmail(e.target.value)}
+                placeholder="agent@thenextstreet.com"
                 required
               />
             </div>
@@ -377,7 +421,7 @@ export default function QAForm() {
               <div>
                 <div style={{ ...styles.scoreNum, color: colors.text }}>{scorePercent}%</div>
                 <div style={styles.scoreSub}>
-                  {totalScore} / 100 pts · {answered}/{QA_QUESTIONS.length} answered
+                  {totalScore} / 100 pts Â· {answered}/{QA_QUESTIONS.length} answered
                 </div>
               </div>
               <div style={styles.progressTrack}>
@@ -455,12 +499,12 @@ export default function QAForm() {
               style={styles.textarea}
               value={suggestions}
               onChange={(e) => setSuggestions(e.target.value)}
-              placeholder="Optional — specific feedback for the agent..."
+              placeholder="Optional â specific feedback for the agent..."
             />
           </div>
 
           {/* Error */}
-          {error && <div style={styles.errorBox}>⚠️ {error}</div>}
+          {error && <div style={styles.errorBox}>â ï¸ {error}</div>}
 
           {/* Unanswered warning */}
           {answered < QA_QUESTIONS.length && answered > 0 && (
@@ -481,7 +525,7 @@ export default function QAForm() {
           )}
 
           <button type="submit" style={styles.submitBtn(!allAnswered || submitting)} disabled={!allAnswered || submitting}>
-            {submitting ? "Submitting…" : "Submit Screening to SharePoint"}
+            {submitting ? "Submittingâ¦" : "Submit Screening to SharePoint"}
           </button>
         </form>
       </div>
