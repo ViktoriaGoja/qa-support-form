@@ -16,6 +16,7 @@ export async function submitQARecord(accessToken, formData) {
 
     // Identification fields
     AgentName:    formData.AgentName,
+    AgentEmail:   formData.AgentEmail,
     EvaluatorName: formData.EvaluatorName,
     SubmissionDate: new Date().toISOString(),
 
@@ -66,4 +67,75 @@ export async function submitQARecord(accessToken, formData) {
   }
 
   return await response.json();
+}
+
+/**
+ * Sends the agent an email with their QA screening score via Microsoft Graph.
+ * @param {string} accessToken - Bearer token from MSAL (needs Mail.Send scope)
+ * @param {object} scoreData   - { agentName, agentEmail, evaluatorName, scorePercent, totalScore, passFail }
+ */
+export async function sendScoreEmail(accessToken, scoreData) {
+  const { agentName, agentEmail, evaluatorName, scorePercent, totalScore, passFail } = scoreData;
+
+  const passColor = passFail === "Pass" ? "#2E7D32" : "#C62828";
+  const passBg    = passFail === "Pass" ? "#E8F5E9" : "#FFEBEE";
+
+  const htmlBody = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+      <div style="background:linear-gradient(135deg,#1F5C99,#154073);padding:24px 28px;border-radius:12px 12px 0 0;">
+        <h2 style="color:#fff;margin:0;font-size:20px;">QA Screening Results</h2>
+        <p style="color:#A9C4DE;margin:6px 0 0;font-size:13px;">The Next Street &middot; Customer Service</p>
+      </div>
+      <div style="background:#fff;padding:28px;border:1px solid #e0e8f0;border-top:none;border-radius:0 0 12px 12px;">
+        <p style="color:#333;font-size:15px;margin:0 0 16px;">
+          Hi <strong>${agentName}</strong>,
+        </p>
+        <p style="color:#555;font-size:14px;margin:0 0 20px;">
+          A QA screening was completed for you by <strong>${evaluatorName}</strong>. Here are your results:
+        </p>
+        <div style="text-align:center;padding:20px;border-radius:10px;background:${passBg};border:2px solid ${passColor};margin:0 0 20px;">
+          <div style="font-size:42px;font-weight:800;color:${passColor};">${scorePercent}%</div>
+          <div style="font-size:13px;color:#666;margin:4px 0 10px;">${totalScore} / 100 points</div>
+          <span style="display:inline-block;padding:5px 18px;border-radius:20px;background:${passColor};color:#fff;font-size:14px;font-weight:700;">
+            ${passFail}
+          </span>
+        </div>
+        <p style="color:#888;font-size:12px;margin:0;">
+          If you have questions about this screening, please reach out to your supervisor.
+        </p>
+      </div>
+    </div>
+  `;
+
+  const message = {
+    message: {
+      subject: `QA Screening Result: ${passFail} (${scorePercent}%)`,
+      body: {
+        contentType: "HTML",
+        content: htmlBody,
+      },
+      toRecipients: [
+        {
+          emailAddress: {
+            address: agentEmail,
+          },
+        },
+      ],
+    },
+    saveToSentItems: false,
+  };
+
+  const response = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Email send error ${response.status}: ${errorText}`);
+  }
 }
