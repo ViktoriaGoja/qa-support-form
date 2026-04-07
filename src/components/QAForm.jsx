@@ -2,9 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { loginRequest } from "../authConfig";
 import { submitQARecord, sendScoreEmail } from "../sharepointService";
-import { QA_QUESTIONS } from "../questions";
-
-const CATEGORIES = [...new Set(QA_QUESTIONS.map((q) => q.category))];
+import { QA_QUESTIONS_BY_CHANNEL, CHANNELS } from "../questions";
 
 const styles = {
   page: {
@@ -193,7 +191,11 @@ function scoreColor(pct) {
 export default function QAForm() {
   const { instance, accounts } = useMsal();
 
-  const initialAnswers = Object.fromEntries(QA_QUESTIONS.map((q) => [q.field, null]));
+  const [channel, setChannel] = useState("Phone");
+  const questions = QA_QUESTIONS_BY_CHANNEL[channel];
+  const categories = useMemo(() => [...new Set(questions.map((q) => q.category))], [questions]);
+
+  const initialAnswers = Object.fromEntries(questions.map((q) => [q.field, null]));
   const [answers, setAnswers] = useState(initialAnswers);
   const [agentName, setAgentName] = useState("");
   const [agentEmail, setAgentEmail] = useState("");
@@ -203,19 +205,24 @@ export default function QAForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState(null);
 
+  function handleChannelChange(newChannel) {
+    setChannel(newChannel);
+    setAnswers(Object.fromEntries(QA_QUESTIONS_BY_CHANNEL[newChannel].map((q) => [q.field, null])));
+  }
+
   const { totalScore, scorePercent, passFail, answered } = useMemo(() => {
-    const yesCount = QA_QUESTIONS.filter((q) => answers[q.field] === "Yes").length;
+    const yesCount = questions.filter((q) => answers[q.field] === "Yes").length;
     const total = yesCount * 5;
     const pct = total;
     return {
       totalScore: total,
       scorePercent: pct,
       passFail: pct >= 80 ? "Pass" : "Fail",
-      answered: QA_QUESTIONS.filter((q) => answers[q.field] !== null).length,
+      answered: questions.filter((q) => answers[q.field] !== null).length,
     };
-  }, [answers]);
+  }, [answers, questions]);
 
-  const allAnswered = answered === QA_QUESTIONS.length && agentName.trim() && agentEmail.trim() && evaluatorName.trim();
+  const allAnswered = answered === questions.length && agentName.trim() && agentEmail.trim() && evaluatorName.trim();
   const colors = scoreColor(scorePercent);
 
   async function handleSubmit(e) {
@@ -235,6 +242,7 @@ export default function QAForm() {
         AgentName: agentName.trim(),
         AgentEmail: agentEmail.trim(),
         EvaluatorName: evaluatorName.trim(),
+        Channel: channel,
         SuggestionsForImprovement: suggestions.trim(),
         TotalScore: totalScore,
         ScorePercent: scorePercent,
@@ -247,6 +255,7 @@ export default function QAForm() {
           agentName: agentName.trim(),
           agentEmail: agentEmail.trim(),
           evaluatorName: evaluatorName.trim(),
+          channel,
           scorePercent,
           totalScore,
           passFail,
@@ -299,7 +308,8 @@ export default function QAForm() {
   }
 
   function resetForm() {
-    setAnswers(initialAnswers);
+    setChannel("Phone");
+    setAnswers(Object.fromEntries(QA_QUESTIONS_BY_CHANNEL.Phone.map((q) => [q.field, null])));
     setAgentName("");
     setAgentEmail("");
     setEvaluatorName("");
@@ -319,7 +329,7 @@ export default function QAForm() {
             <div style={styles.successCircle}>â</div>
             <h2 style={{ margin: "0 0 8px", color: "#1F5C99" }}>Screening Submitted</h2>
             <p style={{ color: "#555", margin: "0 0 8px" }}>
-              <strong>{agentName}</strong> â evaluated by <strong>{evaluatorName}</strong>
+              <strong>{agentName}</strong> · {channel} · evaluated by <strong>{evaluatorName}</strong>
             </p>
             <div
               style={{
@@ -375,11 +385,39 @@ export default function QAForm() {
         <div style={styles.header}>
           <h1 style={styles.headerTitle}>Support Quality Assurance</h1>
           <p style={styles.headerSub}>
-            20 criteria Â· 5 points each Â· 100 points max Â· Pass threshold: 80%
+            {channel} · 20 criteria · 5 points each · 100 points max · Pass threshold: 80%
           </p>
         </div>
 
         <form onSubmit={handleSubmit} style={styles.body}>
+          {/* Channel selector */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={styles.label}>Channel *</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {CHANNELS.map((ch) => (
+                <button
+                  key={ch}
+                  type="button"
+                  onClick={() => handleChannelChange(ch)}
+                  style={{
+                    padding: "8px 20px",
+                    borderRadius: 20,
+                    border: "2px solid",
+                    borderColor: channel === ch ? "#1F5C99" : "#ddd",
+                    background: channel === ch ? "#E8F0FE" : "#fff",
+                    color: channel === ch ? "#1F5C99" : "#888",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {ch}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Agent / Evaluator */}
           <div style={styles.row}>
             <div style={styles.col}>
@@ -421,7 +459,7 @@ export default function QAForm() {
               <div>
                 <div style={{ ...styles.scoreNum, color: colors.text }}>{scorePercent}%</div>
                 <div style={styles.scoreSub}>
-                  {totalScore} / 100 pts Â· {answered}/{QA_QUESTIONS.length} answered
+                  {totalScore} / 100 pts Â· {answered}/{questions.length} answered
                 </div>
               </div>
               <div style={styles.progressTrack}>
@@ -448,8 +486,8 @@ export default function QAForm() {
           )}
 
           {/* Questions grouped by category */}
-          {CATEGORIES.map((cat) => {
-            const qs = QA_QUESTIONS.filter((q) => q.category === cat);
+          {categories.map((cat) => {
+            const qs = questions.filter((q) => q.category === cat);
             return (
               <div key={cat}>
                 <div style={styles.sectionHeader}>
@@ -457,7 +495,7 @@ export default function QAForm() {
                   <div style={styles.sectionLine} />
                 </div>
                 {qs.map((q, idx) => {
-                  const globalIdx = QA_QUESTIONS.findIndex((x) => x.field === q.field);
+                  const globalIdx = questions.findIndex((x) => x.field === q.field);
                   const isEven = globalIdx % 2 === 0;
                   return (
                     <div
@@ -507,7 +545,7 @@ export default function QAForm() {
           {error && <div style={styles.errorBox}>â ï¸ {error}</div>}
 
           {/* Unanswered warning */}
-          {answered < QA_QUESTIONS.length && answered > 0 && (
+          {answered < questions.length && answered > 0 && (
             <div
               style={{
                 background: "#FFF8E1",
@@ -519,8 +557,8 @@ export default function QAForm() {
                 marginTop: 16,
               }}
             >
-              {QA_QUESTIONS.length - answered} question
-              {QA_QUESTIONS.length - answered > 1 ? "s" : ""} still need an answer before submitting.
+              {questions.length - answered} question
+              {questions.length - answered > 1 ? "s" : ""} still need an answer before submitting.
             </div>
           )}
 

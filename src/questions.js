@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// QA Screening Questions
+// QA Screening Questions — per-channel
 // Each object maps to a SharePoint Choice column (Yes / No).
-// Update the "label" text here if question wording ever changes.
+// Chat and SMS share the same question set.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const QA_QUESTIONS = [
+const SHARED_QUESTIONS = [
   {
     field: "Q06",
     category: "Opening",
@@ -35,16 +35,8 @@ export const QA_QUESTIONS = [
     category: "Communication",
     label: "Avoided jargon, acronyms, or technical language without explanation",
   },
-  {
-    field: "Q12",
-    category: "Building Rapport",
-    label: "Established rapport and built a positive connection with the customer",
-  },
-  {
-    field: "Q13",
-    category: "Building Rapport",
-    label: "Demonstrated active listening (acknowledged, summarized, confirmed)",
-  },
+  // Q12 — channel-specific (inserted below)
+  // Q13 — channel-specific (inserted below)
   {
     field: "Q14",
     category: "Empathy",
@@ -55,21 +47,9 @@ export const QA_QUESTIONS = [
     category: "Empathy",
     label: "Remained calm and patient throughout the interaction",
   },
-  {
-    field: "Q16",
-    category: "Professionalism",
-    label: "Maintained a professional and courteous tone throughout the call",
-  },
-  {
-    field: "Q17",
-    category: "Professionalism",
-    label: "Avoided interrupting or speaking over the customer",
-  },
-  {
-    field: "Q18",
-    category: "Customer Focus",
-    label: "Prioritized the customer's needs and kept the call focused on resolution",
-  },
+  // Q16 — channel-specific (inserted below)
+  // Q17 — channel-specific (inserted below)
+  // Q18 — channel-specific (inserted below)
   {
     field: "Q19",
     category: "Customer Focus",
@@ -93,16 +73,72 @@ export const QA_QUESTIONS = [
   {
     field: "Q23",
     category: "Compliance",
-    label: "Documented the call and any actions taken accurately",
+    label: "Documented the interaction and any actions taken accurately",
   },
-  {
-    field: "Q24",
-    category: "Closing",
-    label: "Confirmed the customer's issue was resolved before ending the call",
-  },
+  // Q24 — channel-specific (inserted below)
   {
     field: "Q25",
     category: "Closing",
-    label: "Closed the call professionally and offered further assistance",
+    label: "Closed the interaction professionally and offered further assistance",
   },
 ];
+
+// ── Channel-specific questions ──────────────────────────────────────────────
+
+const CHANNEL_SPECIFIC = {
+  Phone: {
+    Q12: { field: "Q12", category: "Building Rapport", label: "Established rapport and built a positive connection with the customer" },
+    Q13: { field: "Q13", category: "Building Rapport", label: "Demonstrated active listening (acknowledged, summarized, confirmed)" },
+    Q16: { field: "Q16", category: "Professionalism", label: "Maintained a professional and courteous tone throughout the call" },
+    Q17: { field: "Q17", category: "Professionalism", label: "Avoided interrupting or speaking over the customer" },
+    Q18: { field: "Q18", category: "Customer Focus", label: "Prioritized the customer's needs and kept the call focused on resolution" },
+    Q24: { field: "Q24", category: "Closing", label: "Confirmed the customer's issue was resolved before ending the call" },
+  },
+  Chat: {
+    Q12: { field: "Q12", category: "Building Rapport", label: "Responded in a timely manner and maintained appropriate response times" },
+    Q13: { field: "Q13", category: "Building Rapport", label: "Acknowledged customer messages and confirmed understanding before proceeding" },
+    Q16: { field: "Q16", category: "Professionalism", label: "Maintained a professional and courteous tone throughout the conversation" },
+    Q17: { field: "Q17", category: "Professionalism", label: "Used correct grammar, spelling, and punctuation" },
+    Q18: { field: "Q18", category: "Customer Focus", label: "Prioritized the customer's needs and kept the conversation focused on resolution" },
+    Q24: { field: "Q24", category: "Closing", label: "Confirmed the customer's issue was resolved before ending the conversation" },
+  },
+  Email: {
+    Q12: { field: "Q12", category: "Building Rapport", label: "Responded within an appropriate timeframe" },
+    Q13: { field: "Q13", category: "Building Rapport", label: "Addressed all points and questions raised by the customer" },
+    Q16: { field: "Q16", category: "Professionalism", label: "Maintained a professional and courteous tone throughout the email" },
+    Q17: { field: "Q17", category: "Professionalism", label: "Used correct grammar, spelling, and punctuation" },
+    Q18: { field: "Q18", category: "Customer Focus", label: "Prioritized the customer's needs and kept the email focused on resolution" },
+    Q24: { field: "Q24", category: "Closing", label: "Confirmed the customer's issue was resolved or provided clear next steps" },
+  },
+};
+
+// SMS uses the same questions as Chat
+CHANNEL_SPECIFIC.SMS = CHANNEL_SPECIFIC.Chat;
+
+// ── Build the full 20-question list per channel ─────────────────────────────
+
+function buildQuestions(channel) {
+  const specific = CHANNEL_SPECIFIC[channel];
+  const all = [
+    ...SHARED_QUESTIONS.slice(0, 6),   // Q06–Q11
+    specific.Q12,
+    specific.Q13,
+    ...SHARED_QUESTIONS.slice(6, 8),   // Q14–Q15
+    specific.Q16,
+    specific.Q17,
+    specific.Q18,
+    ...SHARED_QUESTIONS.slice(8, 12),  // Q19–Q23
+    specific.Q24,
+    ...SHARED_QUESTIONS.slice(12),     // Q25
+  ];
+  return all;
+}
+
+export const CHANNELS = ["Phone", "Chat", "Email", "SMS"];
+
+export const QA_QUESTIONS_BY_CHANNEL = Object.fromEntries(
+  CHANNELS.map((ch) => [ch, buildQuestions(ch)])
+);
+
+// Backward-compatible default export (Phone)
+export const QA_QUESTIONS = QA_QUESTIONS_BY_CHANNEL.Phone;

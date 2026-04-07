@@ -18,6 +18,7 @@ export async function submitQARecord(accessToken, formData) {
     AgentName:    formData.AgentName,
     AgentEmail:   formData.AgentEmail,
     EvaluatorName: formData.EvaluatorName,
+    Channel:      formData.Channel || "Phone",
     SubmissionDate: new Date().toISOString(),
 
     // 20 QA question fields (Choice: Yes / No)
@@ -75,7 +76,7 @@ export async function submitQARecord(accessToken, formData) {
  * @param {object} scoreData   - { agentName, agentEmail, evaluatorName, scorePercent, totalScore, passFail }
  */
 export async function sendScoreEmail(accessToken, scoreData) {
-  const { agentName, agentEmail, evaluatorName, scorePercent, totalScore, passFail } = scoreData;
+  const { agentName, agentEmail, evaluatorName, channel = "Phone", scorePercent, totalScore, passFail } = scoreData;
 
   const passColor = passFail === "Pass" ? "#2E7D32" : "#C62828";
   const passBg    = passFail === "Pass" ? "#E8F5E9" : "#FFEBEE";
@@ -91,7 +92,7 @@ export async function sendScoreEmail(accessToken, scoreData) {
           Hi <strong>${agentName}</strong>,
         </p>
         <p style="color:#555;font-size:14px;margin:0 0 20px;">
-          A QA screening was completed for you by <strong>${evaluatorName}</strong>. Here are your results:
+          A QA screening for <strong>${channel}</strong> was completed for you by <strong>${evaluatorName}</strong>. Here are your results:
         </p>
         <div style="text-align:center;padding:20px;border-radius:10px;background:${passBg};border:2px solid ${passColor};margin:0 0 20px;">
           <div style="font-size:42px;font-weight:800;color:${passColor};">${scorePercent}%</div>
@@ -109,7 +110,7 @@ export async function sendScoreEmail(accessToken, scoreData) {
 
   const message = {
     message: {
-      subject: `QA Screening Result: ${passFail} (${scorePercent}%)`,
+      subject: `QA Screening Result (${channel}): ${passFail} (${scorePercent}%)`,
       body: {
         contentType: "HTML",
         content: htmlBody,
