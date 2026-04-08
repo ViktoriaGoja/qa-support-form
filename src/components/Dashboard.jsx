@@ -137,35 +137,44 @@ const s = {
   },
 };
 
-// ── Helper: fetch QA records from SharePoint ────────────────────────────────
+// ── Helper: fetch QA records via Microsoft Graph API ────────────────────────
+
+const GRAPH_SITE = "allstardriver.sharepoint.com:/sites/ServiceExcellenceDepartment-ALL-CustomerServiceTeam:";
 
 async function fetchQARecords(accessToken) {
-  const { siteUrl, listName } = sharepointConfig;
-  const endpoint = `${siteUrl}/_api/web/lists/getbytitle('${listName}')/items?$top=500&$orderby=SubmissionDate desc`;
+  const { listName } = sharepointConfig;
+  const endpoint =
+    `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE}/lists/${listName}/items` +
+    `?expand=fields($select=AgentName,AgentEmail,EvaluatorName,Channel,TotalScore,ScorePercent,PassFail,SubmissionDate,SuggestionsForImprovement)` +
+    `&$top=500&$orderby=fields/SubmissionDate desc`;
 
   const response = await fetch(endpoint, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json;odata=verbose",
+      "Content-Type": "application/json",
     },
   });
 
   if (!response.ok) {
-    throw new Error(`SharePoint error ${response.status}`);
+    const text = await response.text();
+    throw new Error(`Graph API error ${response.status}: ${text}`);
   }
 
   const data = await response.json();
-  return data.d.results.map((item) => ({
-    id: item.Id,
-    agentName: item.AgentName || "",
-    agentEmail: item.AgentEmail || "",
-    evaluatorName: item.EvaluatorName || "",
-    channel: item.Channel || "Phone",
-    scorePercent: item.ScorePercent ?? item.TotalScore ?? 0,
-    passFail: item.PassFail || (item.ScorePercent >= 80 ? "Pass" : "Fail"),
-    date: item.SubmissionDate ? new Date(item.SubmissionDate) : null,
-    suggestions: item.SuggestionsForImprovement || "",
-  }));
+  return (data.value || []).map((item) => {
+    const f = item.fields || {};
+    return {
+      id: item.id,
+      agentName: f.AgentName || "",
+      agentEmail: f.AgentEmail || "",
+      evaluatorName: f.EvaluatorName || "",
+      channel: f.Channel || "Phone",
+      scorePercent: f.ScorePercent ?? f.TotalScore ?? 0,
+      passFail: f.PassFail || ((f.ScorePercent ?? 0) >= 80 ? "Pass" : "Fail"),
+      date: f.SubmissionDate ? new Date(f.SubmissionDate) : null,
+      suggestions: f.SuggestionsForImprovement || "",
+    };
+  });
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
