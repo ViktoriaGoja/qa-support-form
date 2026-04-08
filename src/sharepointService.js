@@ -7,7 +7,7 @@ import { sharepointConfig } from "./authConfig";
  */
 export async function submitQARecord(accessToken, formData) {
   const { siteUrl, listName } = sharepointConfig;
-  const endpoint = `${siteUrl}/_api/web/lists/getbytitle('${listName}')/items`;
+  const endpoint = `${siteUrl}/_api/web/lists/getbytitle('${encodeURIComponent(listName)}')/items`;
 
   // Build the SharePoint item payload.
   // Choice field values are sent as plain strings ("Yes" / "No").
