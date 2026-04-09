@@ -349,7 +349,7 @@ export default function Assignments() {
             agentCxoneId: c.agentCxoneId,
           })),
           screening_due_date: dueDate,
-          interactions_per_agent: 5,
+          interactions_per_agent: 3,
         }),
       });
 
