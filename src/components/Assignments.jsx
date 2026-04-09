@@ -335,7 +335,6 @@ export default function Assignments() {
           await saveAssignment(token, {
             WeekOf: newWeekOf,
             EvaluatorName: assignment.evaluatorName,
-            EvaluatorEmail: assignment.evaluatorEmail,
             AgentName: assignment.agentName,
             ContactId: String(interaction.contactId),
             Channel: interaction.channel,
