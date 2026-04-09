@@ -174,28 +174,55 @@ async function fetchEvaluatorAgents(token) {
   );
   const items = data.value || [];
 
-  // Collect all Person column LookupIds
+  // If no items, return empty
+  if (items.length === 0) return [];
+
+  // Debug: inspect what field names SharePoint actually returns
+  const sampleFields = items[0]?.fields || {};
+  const fieldNames = Object.keys(sampleFields).filter((k) => !k.startsWith("@"));
+
+  // Try to find Person column LookupId fields (could be Evaluator, Agent, or other names)
+  const evalLookupKey = fieldNames.find((k) => /evaluator/i.test(k) && /lookupid/i.test(k));
+  const agentLookupKey = fieldNames.find((k) => /agent/i.test(k) && /lookupid/i.test(k));
+
+  // If no LookupId fields found, the columns might be text or named differently
+  if (!evalLookupKey && !agentLookupKey) {
+    // Try reading as plain text fields
+    const evalNameKey = fieldNames.find((k) => /evaluator/i.test(k) && !/lookup/i.test(k));
+    const agentNameKey = fieldNames.find((k) => /agent/i.test(k) && !/lookup/i.test(k) && !/cxone/i.test(k));
+
+    if (evalNameKey || agentNameKey) {
+      return items.map((item) => ({
+        id: item.id,
+        evaluatorName: item.fields?.[evalNameKey] || "",
+        evaluatorEmail: "",
+        agentName: item.fields?.[agentNameKey] || "",
+        active: item.fields?.Active !== false,
+      })).filter((r) => r.active && r.agentName);
+    }
+
+    // Nothing matched — throw helpful error with actual field names
+    throw new Error(`Could not find Evaluator/Agent columns. Fields found: ${fieldNames.join(", ")}`);
+  }
+
+  // Person columns found — resolve LookupIds to names
   const lookupIds = new Set();
   items.forEach((item) => {
-    if (item.fields?.EvaluatorLookupId) lookupIds.add(item.fields.EvaluatorLookupId);
-    if (item.fields?.AgentLookupId) lookupIds.add(item.fields.AgentLookupId);
+    if (evalLookupKey && item.fields?.[evalLookupKey]) lookupIds.add(item.fields[evalLookupKey]);
+    if (agentLookupKey && item.fields?.[agentLookupKey]) lookupIds.add(item.fields[agentLookupKey]);
   });
 
-  // Resolve to names and emails
   const userMap = await resolveUsers(token, lookupIds);
 
   return items
     .map((item) => {
-      const evalId = item.fields?.EvaluatorLookupId;
-      const agentId = item.fields?.AgentLookupId;
+      const evalId = evalLookupKey ? item.fields?.[evalLookupKey] : null;
+      const agentId = agentLookupKey ? item.fields?.[agentLookupKey] : null;
       return {
         id: item.id,
         evaluatorName: userMap[evalId]?.name || "",
         evaluatorEmail: userMap[evalId]?.email || "",
-        evaluatorLookupId: evalId,
         agentName: userMap[agentId]?.name || "",
-        agentEmail: userMap[agentId]?.email || "",
-        agentLookupId: agentId,
         active: item.fields?.Active !== false,
       };
     })
