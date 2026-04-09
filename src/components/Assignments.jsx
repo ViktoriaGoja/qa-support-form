@@ -367,15 +367,13 @@ export default function Assignments() {
         for (const interaction of assignment.interactions) {
           await saveAssignment(token, {
             WeekOf: newWeekOf,
-            EvaluatorName: assignment.evaluatorName,
-            AgentName: assignment.agentName,
+            Evaluator: assignment.evaluatorName,
+            Agent: assignment.agentName,
             ContactId: String(interaction.contactId),
             Channel: interaction.channel,
             InteractionDate: interaction.interactionDate,
             Duration: Math.round(interaction.duration),
             SkillName: interaction.skillName || "",
-            Status: "Pending",
-            DueDate: dueDate,
           });
         }
       }
@@ -409,9 +407,9 @@ export default function Assignments() {
   const grouped = useMemo(() => {
     const map = {};
     assignments.forEach((a) => {
-      const key = a.EvaluatorName || "Unassigned";
+      const key = a.Evaluator || "Unassigned";
       if (!map[key]) map[key] = {};
-      const agentKey = a.AgentName || "Unknown";
+      const agentKey = a.Agent || "Unknown";
       if (!map[key][agentKey]) map[key][agentKey] = [];
       map[key][agentKey].push(a);
     });
@@ -424,7 +422,7 @@ export default function Assignments() {
   const stats = useMemo(() => {
     const total = assignments.length;
     const completed = assignments.filter((a) => a.Status === "Completed").length;
-    const agents = new Set(assignments.map((a) => a.AgentName)).size;
+    const agents = new Set(assignments.map((a) => a.Agent)).size;
     return { total, completed, pending: total - completed, agents };
   }, [assignments]);
 
