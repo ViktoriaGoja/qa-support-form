@@ -231,8 +231,9 @@ async function fetchEvaluatorAgents(token) {
 
 async function fetchAssignments(token, weekOf) {
   const listId = await getListId(token, sharepointConfig.assignmentsListName);
+  // Fetch all items (no date filter) to avoid date format mismatch issues
   const data = await graphFetch(token,
-    `/lists/${listId}/items?$expand=fields&$top=500&$filter=fields/WeekOf eq '${weekOf}'`
+    `/lists/${listId}/items?$expand=fields&$top=500`
   );
   return (data.value || []).map((item) => ({
     id: item.id,
