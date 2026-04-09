@@ -323,9 +323,15 @@ export default function Assignments() {
       const token = await getToken();
 
       // 1. Read evaluator-agent config from SharePoint
+      // Debug: also fetch raw list data to diagnose issues
+      const listId = await getListId(token, sharepointConfig.evaluatorAgentsListName);
+      const rawData = await graphFetch(token, `/lists/${listId}/items?$expand=fields&$top=5`);
+      const rawItems = rawData.value || [];
+      const rawFieldNames = rawItems.length > 0 ? Object.keys(rawItems[0].fields || {}).filter(k => !k.startsWith("@")).join(", ") : "NO ITEMS";
+
       const config = await fetchEvaluatorAgents(token);
       if (config.length === 0) {
-        setError("No evaluator-agent mappings found. Create the QA_EvaluatorAgents SharePoint list first.");
+        setError(`No evaluator-agent mappings found. List has ${rawItems.length} items. Fields: ${rawFieldNames}`);
         setGenerating(false);
         return;
       }
