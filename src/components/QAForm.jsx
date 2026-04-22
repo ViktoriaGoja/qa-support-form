@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useMsal } from "@azure/msal-react";
 import { loginRequest } from "../authConfig";
-import { submitQARecord, sendScoreEmail } from "../sharepointService";
+import { submitQARecord, sendScoreEmail, uploadAttachments, markAssignmentCompleted } from "../sharepointService";
 import { QA_QUESTIONS_BY_CHANNEL, CHANNELS } from "../questions";
 import { COLORS, FONTS, GRADIENT } from "../brand";
 
@@ -336,7 +336,7 @@ function scoreColor(pct) {
   return { border: COLORS.fail, text: COLORS.fail, bar: "#EF5350", bg: COLORS.failBg };
 }
 
-export default function QAForm() {
+export default function QAForm({ prefill, onDone }) {
   const { instance, accounts } = useMsal();
   const [accessToken, setAccessToken] = useState(null);
 
@@ -358,19 +358,25 @@ export default function QAForm() {
     if (accounts[0]) getToken();
   }, [instance, accounts]);
 
-  const [channel, setChannel] = useState("Phone");
+  const [channel, setChannel] = useState(prefill?.channel || "Phone");
   const questions = QA_QUESTIONS_BY_CHANNEL[channel];
   const categories = useMemo(() => [...new Set(questions.map((q) => q.category))], [questions]);
 
   const initialAnswers = Object.fromEntries(questions.map((q) => [q.field, null]));
   const [answers, setAnswers] = useState(initialAnswers);
-  const [agentName, setAgentName] = useState("");
-  const [agentEmail, setAgentEmail] = useState("");
+  const [agentName, setAgentName] = useState(prefill?.agentName || "");
+  const [agentEmail, setAgentEmail] = useState(prefill?.agentEmail || "");
   const [evaluatorName, setEvaluatorName] = useState(signedInName);
   const [suggestions, setSuggestions] = useState("");
+  const [attachments, setAttachments] = useState([]); // File[] from <input type="file">
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState(null);
+
+  // Pre-fill context info shown at top of form when coming from an assignment
+  const contactId = prefill?.contactId || "";
+  const skillName = prefill?.skillName || "";
+  const assignmentId = prefill?.assignmentId || null;
 
   function handleChannelChange(newChannel) {
     setChannel(newChannel);
@@ -392,6 +398,55 @@ export default function QAForm() {
   const allAnswered = answered === questions.length && agentName.trim() && agentEmail.trim() && evaluatorName.trim();
   const colors = scoreColor(scorePercent);
 
+  async function doSubmission(accessToken) {
+    // 1. Save the QA record and capture the newly-created item id (needed for attachments)
+    const record = await submitQARecord(accessToken, {
+      ...answers,
+      AgentName: agentName.trim(),
+      AgentEmail: agentEmail.trim(),
+      EvaluatorName: evaluatorName.trim(),
+      Channel: channel,
+      ContactId: contactId,
+      SuggestionsForImprovement: suggestions.trim(),
+      TotalScore: totalScore,
+      ScorePercent: scorePercent,
+      PassFail: passFail,
+    });
+
+    // 2. Upload attachments if any were chosen
+    if (attachments.length > 0 && record?.Id) {
+      try {
+        await uploadAttachments(accessToken, record.Id, attachments);
+      } catch (attErr) {
+        console.warn("Attachment upload failed:", attErr.message);
+      }
+    }
+
+    // 3. Send the score email (best-effort)
+    try {
+      await sendScoreEmail(accessToken, {
+        agentName: agentName.trim(),
+        agentEmail: agentEmail.trim(),
+        evaluatorName: evaluatorName.trim(),
+        channel,
+        scorePercent,
+        totalScore,
+        passFail,
+      });
+    } catch (emailErr) {
+      console.warn("Score email could not be sent:", emailErr.message);
+    }
+
+    // 4. If this screening came from an assignment, mark it completed (best-effort)
+    if (assignmentId) {
+      try {
+        await markAssignmentCompleted(accessToken, assignmentId);
+      } catch (markErr) {
+        console.warn("Could not mark assignment completed:", markErr.message);
+      }
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!allAnswered) return;
@@ -403,64 +458,13 @@ export default function QAForm() {
         ...loginRequest,
         account: accounts[0],
       });
-
-      await submitQARecord(tokenResponse.accessToken, {
-        ...answers,
-        AgentName: agentName.trim(),
-        AgentEmail: agentEmail.trim(),
-        EvaluatorName: evaluatorName.trim(),
-        Channel: channel,
-        SuggestionsForImprovement: suggestions.trim(),
-        TotalScore: totalScore,
-        ScorePercent: scorePercent,
-        PassFail: passFail,
-      });
-
-      try {
-        await sendScoreEmail(tokenResponse.accessToken, {
-          agentName: agentName.trim(),
-          agentEmail: agentEmail.trim(),
-          evaluatorName: evaluatorName.trim(),
-          channel,
-          scorePercent,
-          totalScore,
-          passFail,
-        });
-      } catch (emailErr) {
-        console.warn("Score email could not be sent:", emailErr.message);
-      }
-
+      await doSubmission(tokenResponse.accessToken);
       setSubmitted(true);
     } catch (err) {
       if (err.name === "InteractionRequiredAuthError") {
         try {
           const tokenResponse = await instance.acquireTokenPopup(loginRequest);
-          await submitQARecord(tokenResponse.accessToken, {
-            ...answers,
-            AgentName: agentName.trim(),
-            AgentEmail: agentEmail.trim(),
-            EvaluatorName: evaluatorName.trim(),
-            Channel: channel,
-            SuggestionsForImprovement: suggestions.trim(),
-            TotalScore: totalScore,
-            ScorePercent: scorePercent,
-            PassFail: passFail,
-          });
-
-          try {
-            await sendScoreEmail(tokenResponse.accessToken, {
-              agentName: agentName.trim(),
-              agentEmail: agentEmail.trim(),
-              evaluatorName: evaluatorName.trim(),
-              channel,
-              scorePercent,
-              totalScore,
-              passFail,
-            });
-          } catch (emailErr) {
-            console.warn("Score email could not be sent:", emailErr.message);
-          }
-
+          await doSubmission(tokenResponse.accessToken);
           setSubmitted(true);
         } catch (popupErr) {
           setError(popupErr.message);
@@ -480,6 +484,7 @@ export default function QAForm() {
     setAgentEmail("");
     setEvaluatorName(signedInName);
     setSuggestions("");
+    setAttachments([]);
     setSubmitted(false);
     setError(null);
   }
@@ -523,22 +528,42 @@ export default function QAForm() {
               </span>
             </div>
             <br />
-            <button
-              onClick={resetForm}
-              style={{
-                padding: "10px 28px",
-                background: COLORS.orange,
-                color: COLORS.white,
-                border: "none",
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                fontFamily: FONTS.heading,
-                cursor: "pointer",
-              }}
-            >
-              Start New Screening
-            </button>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              {assignmentId && (
+                <button
+                  onClick={() => onDone && onDone()}
+                  style={{
+                    padding: "10px 28px",
+                    background: COLORS.green,
+                    color: COLORS.white,
+                    border: "none",
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    fontFamily: FONTS.heading,
+                    cursor: "pointer",
+                  }}
+                >
+                  Back to Assignments
+                </button>
+              )}
+              <button
+                onClick={resetForm}
+                style={{
+                  padding: "10px 28px",
+                  background: COLORS.orange,
+                  color: COLORS.white,
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  fontFamily: FONTS.heading,
+                  cursor: "pointer",
+                }}
+              >
+                Start New Screening
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -557,6 +582,27 @@ export default function QAForm() {
         </div>
 
         <form onSubmit={handleSubmit} style={styles.body}>
+          {/* Assignment context banner */}
+          {contactId && (
+            <div
+              style={{
+                background: "#FEF3E2",
+                border: `1.5px solid ${COLORS.orange}`,
+                borderRadius: 8,
+                padding: "10px 14px",
+                marginBottom: 16,
+                fontSize: 13,
+                color: COLORS.gray,
+              }}
+            >
+              <strong style={{ color: COLORS.orange }}>Screening from Assignment</strong>
+              <div style={{ marginTop: 4, fontSize: 12 }}>
+                Contact ID: <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{contactId}</span>
+                {skillName ? <> {"\u00B7"} Skill: {skillName}</> : null}
+              </div>
+            </div>
+          )}
+
           {/* Channel selector */}
           <div style={{ marginBottom: 16 }}>
             <label style={styles.label}>Channel *</label>
@@ -696,6 +742,34 @@ export default function QAForm() {
               onChange={(e) => setSuggestions(e.target.value)}
               placeholder="Optional — specific feedback for the agent..."
             />
+          </div>
+
+          {/* Attachments */}
+          <div style={{ marginTop: 20 }}>
+            <label style={styles.label}>Attachments (call recording, transcript, etc.)</label>
+            <input
+              type="file"
+              multiple
+              onChange={(e) => setAttachments(Array.from(e.target.files || []))}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "10px 12px",
+                border: `1.5px dashed ${COLORS.lightGray}`,
+                borderRadius: 8,
+                fontSize: 13,
+                background: COLORS.offWhite,
+                fontFamily: FONTS.body,
+                cursor: "pointer",
+                boxSizing: "border-box",
+              }}
+            />
+            {attachments.length > 0 && (
+              <div style={{ marginTop: 8, fontSize: 12, color: COLORS.midGray }}>
+                {attachments.length} file{attachments.length > 1 ? "s" : ""} selected:{" "}
+                {attachments.map((f) => f.name).join(", ")}
+              </div>
+            )}
           </div>
 
           {/* Error */}

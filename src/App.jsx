@@ -178,12 +178,31 @@ function NavBar({ page, setPage }) {
 
 function AppContent() {
   const [page, setPage] = useState("dashboard");
+  // prefill holds data passed from Assignments → QAForm (and the assignment id to mark completed)
+  const [prefill, setPrefill] = useState(null);
+
+  function openScreeningFromAssignment(data) {
+    setPrefill(data);
+    setPage("form");
+  }
+
+  function handleTabChange(newPage) {
+    // When manually switching to "form" tab, clear any prefill (user wants a fresh screening)
+    if (newPage === "form" && page !== "form") setPrefill(null);
+    setPage(newPage);
+  }
 
   return (
     <>
       <AuthenticatedTemplate>
-        <NavBar page={page} setPage={setPage} />
-        {page === "dashboard" ? <Dashboard /> : page === "assignments" ? <Assignments /> : <QAForm />}
+        <NavBar page={page} setPage={handleTabChange} />
+        {page === "dashboard" ? (
+          <Dashboard />
+        ) : page === "assignments" ? (
+          <Assignments onScreen={openScreeningFromAssignment} />
+        ) : (
+          <QAForm prefill={prefill} onDone={() => { setPrefill(null); setPage("assignments"); }} />
+        )}
       </AuthenticatedTemplate>
 
       <UnauthenticatedTemplate>

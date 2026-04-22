@@ -52,6 +52,10 @@ export async function submitQARecord(accessToken, formData) {
     SuggestionsForImprovement: formData.SuggestionsForImprovement || "",
   };
 
+  // NOTE: ContactId is intentionally NOT added to the payload — add a ContactId
+  // column to the "Support Quality Assurance" list and then include it here to link
+  // a screening record back to its source assignment.
+
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -67,7 +71,82 @@ export async function submitQARecord(accessToken, formData) {
     throw new Error(`SharePoint error ${response.status}: ${errorText}`);
   }
 
-  return await response.json();
+  // SharePoint REST API returns { d: { Id, ...fields } } with odata=verbose
+  const body = await response.json();
+  const item = body?.d || body;
+  return { ...item, Id: item?.Id || item?.ID };
+}
+
+/**
+ * Uploads files as SharePoint list-item attachments.
+ * Uses the SharePoint REST API since Graph's attachments support is limited for lists.
+ * @param {string} accessToken
+ * @param {number} itemId         - List item ID returned from submitQARecord
+ * @param {File[]} files          - Array of File objects from an <input type="file"> element
+ */
+export async function uploadAttachments(accessToken, itemId, files) {
+  if (!itemId || !files || files.length === 0) return;
+  const { siteUrl, listName } = sharepointConfig;
+
+  for (const file of files) {
+    // Encode the filename for the URL
+    const safeName = encodeURIComponent(file.name);
+    const endpoint =
+      `${siteUrl}/_api/web/lists/getbytitle('${encodeURIComponent(listName)}')` +
+      `/items(${itemId})/AttachmentFiles/add(FileName='${safeName}')`;
+
+    const buffer = await file.arrayBuffer();
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json;odata=verbose",
+      },
+      body: buffer,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Attachment upload failed (${file.name}): ${res.status} ${text}`);
+    }
+  }
+}
+
+/**
+ * Marks a QA_Assignments list item as Completed by patching its Status field
+ * via Microsoft Graph. Returns silently if the Status column doesn't exist.
+ * @param {string} accessToken
+ * @param {string} assignmentItemId  - SharePoint list item ID from Assignments list
+ */
+export async function markAssignmentCompleted(accessToken, assignmentItemId) {
+  if (!assignmentItemId) return;
+  const { assignmentsListName } = sharepointConfig;
+  const GRAPH_SITE =
+    "allstardriver.sharepoint.com:/sites/ServiceExcellenceDepartment-ALL-CustomerServiceTeam:";
+
+  // Resolve list id by display name (matches the pattern in Assignments.jsx)
+  const listsRes = await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE}/lists?$filter=displayName eq '${assignmentsListName}'`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!listsRes.ok) return;
+  const listsData = await listsRes.json();
+  const listId = listsData?.value?.[0]?.id;
+  if (!listId) return;
+
+  await fetch(
+    `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE}/lists/${listId}/items/${assignmentItemId}/fields`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ Status: "Completed" }),
+    }
+  );
+  // Ignore errors — Status column may not exist, which is fine.
 }
 
 /**

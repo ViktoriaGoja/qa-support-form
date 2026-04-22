@@ -82,6 +82,17 @@ const s = {
     color: COLORS.orange,
   }),
   statusCheck: { width: 18, height: 18, cursor: "pointer", accentColor: COLORS.green },
+  screenBtn: {
+    padding: "4px 12px",
+    background: COLORS.orange,
+    color: COLORS.white,
+    border: "none",
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 600,
+    fontFamily: FONTS.heading,
+    cursor: "pointer",
+  },
 
   center: { textAlign: "center", padding: "48px 20px", color: COLORS.midGray, fontSize: 15 },
   errorBox: { background: COLORS.failBg, border: "1px solid #FFCDD2", borderRadius: 8, padding: "12px 16px", color: COLORS.fail, fontSize: 14, marginBottom: 16 },
@@ -274,7 +285,7 @@ function getNextMonday() {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function Assignments() {
+export default function Assignments({ onScreen }) {
   const { instance, accounts } = useMsal();
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -567,6 +578,7 @@ export default function Assignments() {
                               <th style={s.th}>Date</th>
                               <th style={s.th}>Duration</th>
                               <th style={s.th}>Skill</th>
+                              <th style={{ ...s.th, textAlign: "center" }}>Action</th>
                               <th style={{ ...s.th, textAlign: "center" }}>Done</th>
                             </tr>
                           </thead>
@@ -578,6 +590,24 @@ export default function Assignments() {
                                 <td style={s.td}>{formatDate(item.InteractionDate)}</td>
                                 <td style={s.td}>{formatDuration(item.Duration)}</td>
                                 <td style={s.td}>{item.SkillName || "-"}</td>
+                                <td style={{ ...s.td, textAlign: "center" }}>
+                                  <button
+                                    type="button"
+                                    style={s.screenBtn}
+                                    disabled={item.Status === "Completed"}
+                                    onClick={() =>
+                                      onScreen && onScreen({
+                                        assignmentId: item.id,
+                                        agentName: item.Agent || agentName,
+                                        channel: item.Channel,
+                                        contactId: item.ContactId,
+                                        skillName: item.SkillName,
+                                      })
+                                    }
+                                  >
+                                    {item.Status === "Completed" ? "Screened" : "Screen"}
+                                  </button>
+                                </td>
                                 <td style={{ ...s.td, textAlign: "center" }}>
                                   <input
                                     type="checkbox"
