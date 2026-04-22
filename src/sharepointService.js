@@ -52,9 +52,8 @@ export async function submitQARecord(accessToken, formData) {
     SuggestionsForImprovement: formData.SuggestionsForImprovement || "",
   };
 
-  // NOTE: ContactId is intentionally NOT added to the payload — add a ContactId
-  // column to the "Support Quality Assurance" list and then include it here to link
-  // a screening record back to its source assignment.
+  // Link a screening record back to its source CXone contact (from Assignments flow)
+  if (formData.ContactId) payload.ContactId = String(formData.ContactId);
 
   const response = await fetch(endpoint, {
     method: "POST",
