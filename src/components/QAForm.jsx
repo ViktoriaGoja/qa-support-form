@@ -600,6 +600,19 @@ export default function QAForm({ prefill, onDone }) {
               <strong style={{ color: COLORS.orange }}>Screening from Assignment</strong>
               <div style={{ marginTop: 4, fontSize: 12 }}>
                 Contact ID: <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{contactId}</span>
+                {interactionDate ? (
+                  <> {"\u00B7"} Date:{" "}
+                    <span style={{ fontWeight: 600 }}>
+                      {new Date(interactionDate).toLocaleString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </>
+                ) : null}
                 {skillName ? <> {"\u00B7"} Skill: {skillName}</> : null}
               </div>
             </div>
