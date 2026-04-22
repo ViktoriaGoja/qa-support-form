@@ -183,6 +183,37 @@ async function fetchQARecords(accessToken) {
   return records;
 }
 
+// ── Agent metrics helpers ───────────────────────────────────────────────────
+
+const BACKEND_URL = "https://cxone-faq-bot-1.onrender.com";
+const BOT_API_KEY = "tns-bot-secret-2024";
+
+async function fetchProductivity(startDate, endDate) {
+  const url = `${BACKEND_URL}/api/metrics/productivity?startDate=${startDate}&endDate=${endDate}`;
+  const res = await fetch(url, { headers: { "X-API-Key": BOT_API_KEY } });
+  if (!res.ok) throw new Error(`Productivity fetch failed (${res.status})`);
+  return res.json();
+}
+
+async function fetchUnavailable(startDate, endDate) {
+  const url = `${BACKEND_URL}/api/metrics/unavailable?startDate=${startDate}&endDate=${endDate}`;
+  const res = await fetch(url, { headers: { "X-API-Key": BOT_API_KEY } });
+  if (!res.ok) throw new Error(`Unavailable fetch failed (${res.status})`);
+  return res.json();
+}
+
+function formatSeconds(sec) {
+  if (!sec) return "-";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function isoDate(d) {
+  return d.toISOString().split("T")[0];
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -192,6 +223,17 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [channelFilter, setChannelFilter] = useState("All");
   const [agentFilter, setAgentFilter] = useState("All");
+
+  // Agent metrics state
+  const [metricsRange, setMetricsRange] = useState(() => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 3600 * 1000);
+    return { start: isoDate(start), end: isoDate(end) };
+  });
+  const [productivity, setProductivity] = useState([]);
+  const [unavailable, setUnavailable] = useState([]);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -215,6 +257,94 @@ export default function Dashboard() {
     }
     load();
   }, [instance, accounts]);
+
+  // Load agent metrics when range changes
+  useEffect(() => {
+    async function loadMetrics() {
+      setMetricsLoading(true);
+      setMetricsError(null);
+      try {
+        const [prod, unav] = await Promise.all([
+          fetchProductivity(metricsRange.start, metricsRange.end),
+          fetchUnavailable(metricsRange.start, metricsRange.end),
+        ]);
+        setProductivity(prod.agents || []);
+        setUnavailable(unav.agents || []);
+      } catch (err) {
+        setMetricsError(err.message);
+      } finally {
+        setMetricsLoading(false);
+      }
+    }
+    loadMetrics();
+  }, [metricsRange.start, metricsRange.end]);
+
+  // Combined per-agent metrics (productivity + quality + unavailable)
+  const agentMetrics = useMemo(() => {
+    const byName = {};
+
+    // Seed from productivity (CXone data)
+    productivity.forEach((p) => {
+      byName[p.agentName] = {
+        agentName: p.agentName,
+        totalContacts: p.totalContacts || 0,
+        byChannel: p.byChannel || {},
+        totalHandleSeconds: p.totalHandleSeconds || 0,
+        avgHandleSeconds: p.avgHandleSeconds || 0,
+        refusedCount: p.refusedCount || 0,
+        unavailableSeconds: 0,
+        // Quality filled below
+        screenings: 0,
+        avgScore: null,
+        passCount: 0,
+        passRate: null,
+      };
+    });
+
+    // Merge unavailable time
+    unavailable.forEach((u) => {
+      if (!byName[u.agentName]) {
+        byName[u.agentName] = {
+          agentName: u.agentName,
+          totalContacts: 0, byChannel: {}, totalHandleSeconds: 0, avgHandleSeconds: 0, refusedCount: 0,
+          unavailableSeconds: 0, screenings: 0, avgScore: null, passCount: 0, passRate: null,
+        };
+      }
+      byName[u.agentName].unavailableSeconds = u.unavailableSeconds || 0;
+    });
+
+    // Merge QA quality from SharePoint records (filter to the same date range)
+    const startMs = new Date(metricsRange.start).getTime();
+    const endMs = new Date(metricsRange.end).getTime() + 24 * 3600 * 1000; // inclusive end
+    records.forEach((r) => {
+      const t = r.date?.getTime() || 0;
+      if (t < startMs || t > endMs) return;
+      const name = r.agentName;
+      if (!name) return;
+      if (!byName[name]) {
+        byName[name] = {
+          agentName: name,
+          totalContacts: 0, byChannel: {}, totalHandleSeconds: 0, avgHandleSeconds: 0, refusedCount: 0,
+          unavailableSeconds: 0, screenings: 0, avgScore: null, passCount: 0, passRate: null,
+        };
+      }
+      const agg = byName[name];
+      agg.screenings = (agg.screenings || 0) + 1;
+      agg._scoreSum = (agg._scoreSum || 0) + (r.scorePercent || 0);
+      if (r.passFail === "Pass") agg.passCount = (agg.passCount || 0) + 1;
+    });
+
+    // Finalize averages
+    Object.values(byName).forEach((a) => {
+      if (a.screenings > 0) {
+        a.avgScore = Math.round(a._scoreSum / a.screenings);
+        a.passRate = Math.round((a.passCount / a.screenings) * 100);
+      }
+      delete a._scoreSum;
+    });
+
+    return Object.values(byName).sort((a, b) => b.totalContacts - a.totalContacts);
+  }, [productivity, unavailable, records, metricsRange.start, metricsRange.end]);
 
   // Filtered records
   const filtered = useMemo(() => {
@@ -319,6 +449,97 @@ export default function Dashboard() {
                   ))}
                 </div>
               )}
+
+              {/* ── Agent Metrics Section ─────────────────────────── */}
+              <div style={{ marginTop: 36, marginBottom: 24 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+                  <h2 style={{ margin: 0, fontSize: 18, fontFamily: FONTS.heading, color: COLORS.gray }}>
+                    Agent Metrics
+                  </h2>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                    <label style={{ color: COLORS.midGray }}>From</label>
+                    <input
+                      type="date"
+                      value={metricsRange.start}
+                      onChange={(e) => setMetricsRange((r) => ({ ...r, start: e.target.value }))}
+                      style={{ padding: "6px 10px", border: `1.5px solid ${COLORS.lightGray}`, borderRadius: 6, fontFamily: FONTS.body, fontSize: 13 }}
+                    />
+                    <label style={{ color: COLORS.midGray }}>To</label>
+                    <input
+                      type="date"
+                      value={metricsRange.end}
+                      onChange={(e) => setMetricsRange((r) => ({ ...r, end: e.target.value }))}
+                      style={{ padding: "6px 10px", border: `1.5px solid ${COLORS.lightGray}`, borderRadius: 6, fontFamily: FONTS.body, fontSize: 13 }}
+                    />
+                    {metricsLoading && <span style={{ color: COLORS.midGray, fontSize: 12 }}>Loading…</span>}
+                  </div>
+                </div>
+
+                {metricsError && (
+                  <div style={{
+                    background: COLORS.failBg, border: "1px solid #FFCDD2", borderRadius: 8,
+                    padding: "10px 14px", color: COLORS.fail, fontSize: 13, marginBottom: 12,
+                  }}>
+                    {"\u26A0"} {metricsError}
+                  </div>
+                )}
+
+                {agentMetrics.length === 0 && !metricsLoading ? (
+                  <div style={{ padding: 20, textAlign: "center", color: COLORS.midGray, fontSize: 13 }}>
+                    No agent data for this date range.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={s.table}>
+                      <thead>
+                        <tr>
+                          <th style={s.th}>Agent</th>
+                          <th style={{ ...s.th, textAlign: "right" }}>Contacts</th>
+                          <th style={s.th}>By Channel</th>
+                          <th style={{ ...s.th, textAlign: "right" }}>Avg Handle</th>
+                          <th style={{ ...s.th, textAlign: "right" }}>Total Handle</th>
+                          <th style={{ ...s.th, textAlign: "right" }}>Refused</th>
+                          <th style={{ ...s.th, textAlign: "right" }}>Unavailable</th>
+                          <th style={{ ...s.th, textAlign: "right" }}>QA Screenings</th>
+                          <th style={{ ...s.th, textAlign: "right" }}>Avg Score</th>
+                          <th style={{ ...s.th, textAlign: "right" }}>Pass Rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agentMetrics.map((a) => (
+                          <tr key={a.agentName}>
+                            <td style={{ ...s.td, fontWeight: 600, color: COLORS.gray }}>{a.agentName}</td>
+                            <td style={{ ...s.td, textAlign: "right" }}>{a.totalContacts}</td>
+                            <td style={s.td}>
+                              {Object.entries(a.byChannel || {})
+                                .filter(([, n]) => n > 0)
+                                .map(([ch, n]) => `${ch[0]}${n}`)
+                                .join(" · ") || "-"}
+                            </td>
+                            <td style={{ ...s.td, textAlign: "right" }}>{formatSeconds(a.avgHandleSeconds)}</td>
+                            <td style={{ ...s.td, textAlign: "right" }}>{formatSeconds(a.totalHandleSeconds)}</td>
+                            <td style={{ ...s.td, textAlign: "right", color: a.refusedCount > 0 ? COLORS.fail : COLORS.gray }}>
+                              {a.refusedCount}
+                            </td>
+                            <td style={{ ...s.td, textAlign: "right" }}>{formatSeconds(a.unavailableSeconds)}</td>
+                            <td style={{ ...s.td, textAlign: "right" }}>{a.screenings || "-"}</td>
+                            <td style={{ ...s.td, textAlign: "right", fontWeight: 600,
+                              color: a.avgScore == null ? COLORS.midGray : a.avgScore >= 80 ? COLORS.green : COLORS.fail,
+                            }}>
+                              {a.avgScore == null ? "-" : `${a.avgScore}%`}
+                            </td>
+                            <td style={{ ...s.td, textAlign: "right", fontWeight: 600,
+                              color: a.passRate == null ? COLORS.midGray : a.passRate >= 80 ? COLORS.green : COLORS.fail,
+                            }}>
+                              {a.passRate == null ? "-" : `${a.passRate}%`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
 
               {/* Filters */}
               <div style={s.filterRow}>
