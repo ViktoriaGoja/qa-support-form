@@ -401,13 +401,22 @@ export default function Dashboard() {
               <p style={{ color: COLORS.fail }}>{"\u26A0"} {error}</p>
               <p style={{ fontSize: 13 }}>Make sure you have access to the SharePoint list.</p>
             </div>
-          ) : records.length === 0 ? (
-            <div style={s.center}>
-              <p style={{ fontSize: 18, fontFamily: FONTS.heading, color: COLORS.gray }}>No screenings yet</p>
-              <p>Submit your first QA screening to see results here.</p>
-            </div>
           ) : (
             <>
+              {records.length === 0 && (
+                <div style={{
+                  background: COLORS.warningBg,
+                  border: `1px solid ${COLORS.clementine}`,
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  fontSize: 13,
+                  color: "#795548",
+                  marginBottom: 20,
+                }}>
+                  No QA screenings submitted yet. Agent productivity from CXone is shown below.
+                </div>
+              )}
+
               {/* Summary Stats */}
               <div style={s.statsRow}>
                 <div style={s.statCard(COLORS.orange)}>
