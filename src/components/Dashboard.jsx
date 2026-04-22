@@ -143,10 +143,10 @@ const GRAPH_SITE = "allstardriver.sharepoint.com:/sites/ServiceExcellenceDepartm
 
 async function fetchQARecords(accessToken) {
   const { listName } = sharepointConfig;
+  // Expand all fields so we get both custom columns and SharePoint system columns (Created etc.)
   const endpoint =
     `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE}/lists/${listName}/items` +
-    `?expand=fields($select=AgentName,AgentEmail,EvaluatorName,Channel,TotalScore,ScorePercent,PassFail,SubmissionDate,SuggestionsForImprovement)` +
-    `&$top=500&$orderby=fields/SubmissionDate desc`;
+    `?expand=fields&$top=500`;
 
   const response = await fetch(endpoint, {
     headers: {
@@ -162,8 +162,10 @@ async function fetchQARecords(accessToken) {
   }
 
   const data = await response.json();
-  return (data.value || []).map((item) => {
+  const records = (data.value || []).map((item) => {
     const f = item.fields || {};
+    // Date priority: SubmissionDate → Created (system field, always present)
+    const dateStr = f.SubmissionDate || f.Created || item.createdDateTime;
     return {
       id: item.id,
       agentName: f.AgentName || "",
@@ -172,10 +174,13 @@ async function fetchQARecords(accessToken) {
       channel: f.Channel || "Phone",
       scorePercent: f.ScorePercent ?? f.TotalScore ?? 0,
       passFail: f.PassFail || ((f.ScorePercent ?? 0) >= 80 ? "Pass" : "Fail"),
-      date: f.SubmissionDate ? new Date(f.SubmissionDate) : null,
+      date: dateStr ? new Date(dateStr) : null,
       suggestions: f.SuggestionsForImprovement || "",
     };
   });
+  // Sort newest first
+  records.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+  return records;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
