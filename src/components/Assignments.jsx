@@ -602,6 +602,7 @@ export default function Assignments({ onScreen }) {
                                         channel: item.Channel,
                                         contactId: item.ContactId,
                                         skillName: item.SkillName,
+                                        interactionDate: item.InteractionDate,
                                       })
                                     }
                                   >

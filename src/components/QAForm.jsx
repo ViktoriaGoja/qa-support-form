@@ -377,6 +377,7 @@ export default function QAForm({ prefill, onDone }) {
   const contactId = prefill?.contactId || "";
   const skillName = prefill?.skillName || "";
   const assignmentId = prefill?.assignmentId || null;
+  const interactionDate = prefill?.interactionDate || "";
 
   function handleChannelChange(newChannel) {
     setChannel(newChannel);
@@ -407,6 +408,7 @@ export default function QAForm({ prefill, onDone }) {
       EvaluatorName: evaluatorName.trim(),
       Channel: channel,
       ContactId: contactId,
+      InteractionDate: interactionDate,
       SuggestionsForImprovement: suggestions.trim(),
       TotalScore: totalScore,
       ScorePercent: scorePercent,

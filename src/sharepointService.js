@@ -54,6 +54,10 @@ export async function submitQARecord(accessToken, formData) {
 
   // Link a screening record back to its source CXone contact (from Assignments flow)
   if (formData.ContactId) payload.ContactId = String(formData.ContactId);
+  // Actual interaction date from CXone (when coming from an assignment)
+  if (formData.InteractionDate) {
+    payload.InteractionDate = new Date(formData.InteractionDate).toISOString();
+  }
 
   const response = await fetch(endpoint, {
     method: "POST",
